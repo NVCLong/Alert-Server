@@ -37,11 +37,13 @@ func LoadEnvFile() {
 func GetEnv(envVar EnvVar) string {
 	envVarName, ok := envVarNames[envVar]
 	if !ok {
+		log.Fatal("Can not get env")
 		return ""
 	}
 	value := os.Getenv(envVarName)
 
 	if value == "" {
+		log.Fatal("Can not get env")
 		return ""
 	}
 

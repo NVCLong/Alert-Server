@@ -8,11 +8,12 @@ import (
 	"gorm.io/gorm"
 
 	bootstrap "github.com/NVCLong/Alert-Server/bootstrap"
+	workflow "github.com/NVCLong/Alert-Server/models/workflow"
 )
 
 var Db *gorm.DB
 
-func ConnectDatabase() {
+func ConnectDatabase() *gorm.DB {
 	bootstrap.LoadEnvFile()
 
 	host := bootstrap.GetEnv(bootstrap.EnvDBHost)
@@ -28,12 +29,25 @@ func ConnectDatabase() {
 	)
 
 	// Connect to the PostgreSQL database
-	db, errSql := gorm.Open(postgres.Open(psqlSetup), &gorm.Config{})
-	if errSql != nil {
-		log.Println("There is an error while connecting to the database:", errSql)
-		log.Fatalf("Database connection failed: %v", errSql)
-	} else {
-		Db = db
-		log.Println("Successfully connected to the database!")
+	db, err := gorm.Open(postgres.Open(psqlSetup), &gorm.Config{})
+	if err != nil {
+		log.Println("Error connecting to the database:", err)
+		return nil // Return nil if there is an error
 	}
+	db.Exec("DEALLOCATE ALL")
+	AutoMigrate(db)
+	log.Println("Successfully connected to the database!")
+	return db
+}
+
+func AutoMigrate(db *gorm.DB) {
+	workflow.Migrate(db)
+}
+
+// repository interface
+type AbstractRepository[T any] interface {
+	Create(entity T) error
+	FindByCondition(id uint) (T, error)
+	Update(entity T) error
+	Delete(entity T) error
 }

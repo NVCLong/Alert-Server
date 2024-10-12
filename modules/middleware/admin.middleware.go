@@ -37,7 +37,8 @@ func AdminMiddleware(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 		var exists bool
-		query := fmt.Sprintf(`SELECT EXISTS (
+		query := fmt.Sprintf(`
+		    SELECT EXISTS (
 			SELECT 1 
 			FROM users 
 			JOIN user_setting_info usi on usi.user_id = users.id

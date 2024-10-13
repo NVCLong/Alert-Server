@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/NVCLong/Alert-Server/common"
 	abstractrepo "github.com/NVCLong/Alert-Server/database/abstract-repo"
 	"github.com/NVCLong/Alert-Server/dto"
 	"github.com/NVCLong/Alert-Server/modules/work-flow/repository"
@@ -17,18 +18,20 @@ func NewWorkFlowController(timeout time.Duration, db *gorm.DB, group *gin.Router
 	workflowGroup := group.Group("/work-flow")
 
 	workFlowRepository := repository.NewWorkFlowRepository(db, abstractrepo.WorkFlowTable)
+	logger := common.NewTracingLogger("WorkflowController")
 
 	workFlowService := service.NewWorkFlowService(workFlowRepository)
 
 	workflowGroup.GET("/all", func(ctx *gin.Context) {
-		getAllWorkFlows(ctx, workFlowService)
+		getAllWorkFlows(ctx, workFlowService, logger)
 	})
 	workflowGroup.POST("/create", func(ctx *gin.Context) {
 		createWorkFlow(ctx, workFlowService)
 	})
 }
 
-func getAllWorkFlows(c *gin.Context, workFlowService service.WorkFlowAbstractService) {
+func getAllWorkFlows(c *gin.Context, workFlowService service.WorkFlowAbstractService, logger common.AbstractLogger) {
+	logger.Log("Recieve Request get all workflows ")
 	workFlowService.GetAllWorkFlows(c)
 }
 

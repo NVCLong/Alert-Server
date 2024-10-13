@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"time"
 
 	boostrap "github.com/NVCLong/Alert-Server/bootstrap"
@@ -14,6 +13,7 @@ import (
 func main() {
 	router := gin.Default()
 	db := database.ConnectDatabase()
+	port := boostrap.GetEnv(boostrap.EnvServerPort)
 
 	corsConfig := cors.Config{
 		AllowOrigins:     []string{"http://localhost:5173"},
@@ -24,8 +24,13 @@ func main() {
 		MaxAge:           12 * time.Hour,
 	}
 	router.Use(cors.New(corsConfig))
+	router.GET("/", func(c *gin.Context) {
+		c.JSON(200, gin.H{
+			"message": "Welcome to the API!",
+		})
+	})
 	timeout := time.Duration(30) * time.Second
 	router.Group("/api")
 	mainController.Setup(timeout, db, router)
-	router.Run(fmt.Sprintf("localhost:%s", boostrap.GetEnv(boostrap.EnvServerPort)))
+	router.Run(":" + port)
 }

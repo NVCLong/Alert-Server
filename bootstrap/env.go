@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 )
 
@@ -16,6 +17,7 @@ const (
 	EnvDBUser
 	EnvDBPassword
 	EnvServerPort
+	EnvAllowPort
 )
 
 var envVarNames = map[EnvVar]string{
@@ -25,12 +27,15 @@ var envVarNames = map[EnvVar]string{
 	EnvDBUser:     "POSTGRES_USER_NAME",
 	EnvDBPassword: "POSTGRES_PASSWORD",
 	EnvServerPort: "PORT",
+	EnvAllowPort:  "ALLOW_PORT",
 }
 
 func LoadEnvFile() {
-	err := godotenv.Load(".env")
-	if err != nil {
-		log.Fatalf("Error loading .env file: %v", err)
+	if gin.Mode() != gin.ReleaseMode {
+		err := godotenv.Load()
+		if err != nil {
+			log.Printf("Error loading .env file: %v", err)
+		}
 	}
 }
 

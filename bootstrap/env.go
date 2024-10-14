@@ -18,16 +18,22 @@ const (
 	EnvDBPassword
 	EnvServerPort
 	EnvAllowPort
+	EnvRedisHost
+	EnvRedisAccessKey
+	EnvRedisTTL
 )
 
 var envVarNames = map[EnvVar]string{
-	EnvDBHost:     "POSTGRES_HOST",
-	EnvDBPort:     "POSTGRES_PORT",
-	EnvDBName:     "POSTGRES_DB",
-	EnvDBUser:     "POSTGRES_USER_NAME",
-	EnvDBPassword: "POSTGRES_PASSWORD",
-	EnvServerPort: "PORT",
-	EnvAllowPort:  "ALLOW_PORT",
+	EnvDBHost:         "POSTGRES_HOST",
+	EnvDBPort:         "POSTGRES_PORT",
+	EnvDBName:         "POSTGRES_DB",
+	EnvDBUser:         "POSTGRES_USER_NAME",
+	EnvDBPassword:     "POSTGRES_PASSWORD",
+	EnvServerPort:     "PORT",
+	EnvAllowPort:      "ALLOW_PORT",
+	EnvRedisHost:      "REDIS_HOST",
+	EnvRedisAccessKey: "REDIS_ACCESS_KEY",
+	EnvRedisTTL:       "REDIS_TTL",
 }
 
 func LoadEnvFile() {

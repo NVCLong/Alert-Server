@@ -1,8 +1,13 @@
 package service
 
 import (
+	"container/list"
+	"encoding/json"
 	"fmt"
+	conditionbatch "github.com/NVCLong/Alert-Server/modules/condition-batch"
+	"gorm.io/gorm"
 	"net/http"
+	"strings"
 
 	"github.com/NVCLong/Alert-Server/common"
 	abstractrepo "github.com/NVCLong/Alert-Server/database/abstract-repo"
@@ -12,20 +17,25 @@ import (
 )
 
 type WorkFlowService struct {
-	repository abstractrepo.WorkFlowRepository
-	logger     common.AbstractLogger
+	repository            abstractrepo.WorkFlowRepository
+	conditionBatchService conditionbatch.AbstractService
+	logger                common.AbstractLogger
 }
 
 type WorkFlowAbstractService interface {
 	GetAllWorkFlows(c *gin.Context)
 	CreateWorkFlow(c *gin.Context, wf dto.WorkFlowDTO)
+	ImportWorkFlow(c *gin.Context, workFlowId uint, listCondition []dto.WorkFlowConditionRequest) dto.SaveResponse
+	ParseCondition(conditionObj dto.WorkFlowConditionRequest, logger common.AbstractLogger, workFlowId uint) (dto.SaveResponse, error)
 }
 
-func NewWorkFlowService(repository abstractrepo.WorkFlowRepository) WorkFlowAbstractService {
+func NewWorkFlowService(db *gorm.DB, repository abstractrepo.WorkFlowRepository) WorkFlowAbstractService {
 	logger := common.NewTracingLogger("WorkFlowService")
+	batchService := conditionbatch.NewBatchService(db, logger)
 	return &WorkFlowService{
-		repository: repository,
-		logger:     logger,
+		repository:            repository,
+		logger:                logger,
+		conditionBatchService: batchService,
 	}
 }
 
@@ -52,6 +62,34 @@ func (s *WorkFlowService) CreateWorkFlow(c *gin.Context, wf dto.WorkFlowDTO) {
 	s.repository.Create(c, &workFlow)
 }
 
+func (s *WorkFlowService) ImportWorkFlow(c *gin.Context, workFlowId uint, listCondition []dto.WorkFlowConditionRequest) dto.SaveResponse {
+	workFlow, err := s.repository.GetById(workFlowId)
+	if err != nil {
+		return dto.SaveResponse{
+			Message:    "Workflow is not found",
+			WorkflowId: workFlowId,
+		}
+	}
+	s.logger.Debug(fmt.Sprintf("Found Workflow with id : %d", workFlow.ID))
+	for _, condition := range listCondition {
+		result, error := s.ParseCondition(condition, s.logger, workFlowId)
+		if error != nil || !result.Status {
+			return dto.SaveResponse{
+				Message:    "Fail to import work flow",
+				Status:     false,
+				WorkflowId: workFlowId,
+			}
+		}
+	}
+	s.logger.Debug(fmt.Sprintf("Import condition to workflow %d", workFlowId))
+
+	return dto.SaveResponse{
+		Message:    "Import success",
+		Status:     true,
+		WorkflowId: workFlowId,
+	}
+}
+
 func mapToWorkFlowResponse(workFlows []dto.GetAllWorkFlowRawResponse) []dto.GetAllWorkFlowResponse {
 	if len(workFlows) == 0 {
 		return []dto.GetAllWorkFlowResponse{}
@@ -69,4 +107,267 @@ func mapToWorkFlowResponse(workFlows []dto.GetAllWorkFlowRawResponse) []dto.GetA
 		responses = append(responses, response)
 	}
 	return responses
+}
+
+// condition should be:
+// AT LEAST OF ONE DEADLINE IN [.......] with ..... is parameter
+// DEADLINE TIME  < Date AND DEADLINE >DATE
+// TOTAL DEADLINE IN WEEK
+// TOTAL DEADLINE FINISH IN WEEK
+// DEADLINE NEED TO DONE IN ? DAYS AFTER
+// CONDITION A AND CONDITION B
+func (s *WorkFlowService) ParseCondition(conditionObj dto.WorkFlowConditionRequest, logger common.AbstractLogger, workFlowId uint) (dto.SaveResponse, error) {
+	// Create a map to store results for each sub-condition\
+	condition := conditionObj.Condition
+	var resultsArray []*ParseResult
+	var conditionString string
+	conditionKeywords := list.New()
+	isSingleCondition := getAndCheckConditionKeyword(condition, conditionKeywords, logger)
+
+	// Loop through each condition keyword to find matches condition have condition keyword
+	if !isSingleCondition {
+		keyword := conditionKeywords.Front().Value.(string)
+		if strings.Contains(condition, keyword) {
+			conditionKeywords.PushBack(keyword)
+			subConditions := strings.Split(condition, keyword)
+			// Parse each sub-condition and accumulate the results in resultMap
+			parsedResults := parseSubCondition(subConditions, *conditionKeywords, logger)
+
+			for _, result := range parsedResults {
+				resultsArray = append(resultsArray, result)
+				conditionKeywords.PushBack(result.FunctionHandler)
+			}
+		}
+		conditionOperatorStrings := strings.Join(common.CONDITION_KEYWORD, ",")
+		conditionOperator := list.New()
+		var resultArray []string
+
+		if conditionKeywords.Len() != 0 {
+			for e := conditionKeywords.Front(); e != nil; {
+				// If the current value is a condition keyword
+				if val, ok := e.Value.(string); ok && strings.Contains(conditionOperatorStrings, val) {
+					// Store the condition operator
+					conditionOperator.PushBack(val)
+				} else {
+					if len(resultArray) == 0 {
+						resultArray = append(resultArray, val)
+					} else {
+						if conditionOperator.Len() > 0 {
+							operatorElement := conditionOperator.Remove(conditionOperator.Back()).(string)
+							resultArray = append(resultArray, operatorElement, val)
+						} else {
+							resultArray = append(resultArray, val)
+						}
+					}
+				}
+				e = e.Next()
+			}
+			conditionString = strings.Join(resultArray, " ")
+		}
+	}
+
+	// case condition do not contains condition keyword
+	if isSingleCondition {
+		parsedResults := parseSingleCondition(condition, logger)
+		for _, result := range parsedResults {
+			resultsArray = append(resultsArray, result)
+			conditionString = "single-condition"
+		}
+	}
+
+	logger.Debug(conditionString)
+	logger.Debug("Convert the array to JSON")
+	// Convert the array to JSON
+	jsonData, err := json.Marshal(resultsArray)
+	if err != nil {
+		logger.Error(fmt.Sprintf("Failed to convert results to JSON: %s", err))
+		response := dto.SaveResponse{
+			Message:    "Import Workflow fail as fail to convert results to JSON",
+			Status:     false,
+			WorkflowId: workFlowId,
+		}
+		return response, err
+	}
+
+	actionData, e := json.Marshal(conditionObj.Condition)
+	if e != nil {
+		logger.Error(fmt.Sprintf("Failed to convert action to JSON: %s", e))
+		response := dto.SaveResponse{
+			Message:    "Import Workflow fail as fail to convert action to JSON",
+			Status:     false,
+			WorkflowId: workFlowId,
+		}
+		return response, err
+	}
+
+	// binding attribute
+	jsonString := string(jsonData)
+	//action
+	actionString := string(actionData)
+
+	//condition
+
+	logger.Debug(jsonString)
+
+	// Return the map containing all the parsed results
+	saveConditionDto := dto.ConditionBatchDTO{
+		WorkFlowID:  workFlowId,
+		Condition:   conditionString,
+		BindingAttr: jsonString,
+		Action:      actionString,
+	}
+	result := s.conditionBatchService.SaveCondition(saveConditionDto)
+	return result, nil
+}
+
+func getAndCheckConditionKeyword(condition string, conditionKeyWords *list.List, logger common.AbstractLogger) bool {
+	for _, keyword := range common.CONDITION_KEYWORD {
+		if strings.Contains(condition, keyword) {
+			logger.Debug("Have condition keyword")
+			conditionKeyWords.PushBack(keyword)
+			return false
+		}
+	}
+	return true
+}
+
+func parseSingleCondition(condition string, logger common.AbstractLogger) map[string]*ParseResult {
+	operatorMap := map[OperatorType][]string{
+		NUMERICS: common.NUMERIC_OPERATOR,
+		EQUALS:   common.EQUAL_OPERATOR,
+		CONTAINS: common.CONTAIN_OPERATOR,
+	}
+
+	resultMap := make(map[string]*ParseResult)
+
+	foundOperator := false
+	for operatorType, operators := range operatorMap {
+		for _, operator := range operators {
+			if strings.Contains(condition, operator) {
+				logger.Debug(fmt.Sprintf("Found %s operator: %s in subCondition: %s", operatorType, operator, condition))
+				foundOperator = true
+
+				// Parse the condition and store the result in the map
+				parseResult := parseConditionToFunction(condition, operator, operatorType, logger)
+				resultMap[condition] = parseResult
+
+				logger.Debug(fmt.Sprintf("Stored result for subCondition: %s", condition))
+				break
+			}
+		}
+		if foundOperator {
+			break
+		}
+	}
+
+	return resultMap
+}
+
+func parseSubCondition(subConditions []string, conditionKeywords list.List, logger common.AbstractLogger) map[string]*ParseResult {
+
+	operatorMap := map[OperatorType][]string{
+		NUMERICS: common.NUMERIC_OPERATOR,
+		EQUALS:   common.EQUAL_OPERATOR,
+		CONTAINS: common.CONTAIN_OPERATOR,
+	}
+
+	resultMap := make(map[string]*ParseResult)
+
+	for _, subCondition := range subConditions {
+		foundOperator := false
+		for operatorType, operators := range operatorMap {
+			for _, operator := range operators {
+				if strings.Contains(subCondition, operator) {
+					logger.Debug(fmt.Sprintf("Found %s operator: %s in subCondition: %s", operatorType, operator, subCondition))
+					foundOperator = true
+
+					// Parse the condition and store the result in the map
+					parseResult := parseConditionToFunction(subCondition, operator, operatorType, logger)
+					resultMap[subCondition] = parseResult
+
+					logger.Debug(fmt.Sprintf("Stored result for subCondition: %s", subCondition))
+					break
+				}
+			}
+			if foundOperator {
+				break
+			}
+		}
+	}
+
+	return resultMap
+
+}
+
+func parseConditionToFunction(contextSring string, operator string, opType OperatorType, logger common.AbstractLogger) *ParseResult {
+	logger.Debug("Start to parse condition to function context")
+	params := strings.Split(contextSring, operator)[1]
+	compareString := strings.Split(contextSring, operator)[0]
+	logger.Debug(fmt.Sprintf("Found Params: %s", params))
+	logger.Debug(fmt.Sprintf("Found compare string: %s", compareString))
+	functionHanlderName := getFunctionHandlerName(compareString, operator, params)
+	logger.Debug(fmt.Sprintf("variable: %s, Functionhanler: %s", functionHanlderName.variable, functionHanlderName.handler))
+
+	return &ParseResult{
+		Operator:        operator,
+		Parameter:       params,
+		Variable:        functionHanlderName.variable,
+		FunctionHandler: functionHanlderName.handler,
+	}
+}
+
+func getFunctionHandlerName(compareString string, opeator string, params string) *GetHandlerResposne {
+	if strings.Contains(compareString, common.AT_LEAST_PATTERN) {
+		variable := strings.ReplaceAll(compareString, common.AT_LEAST_PATTERN, "")
+		return &GetHandlerResposne{
+			variable: variable,
+			handler:  string(common.AT_LEAST_HANDLER),
+		}
+	}
+
+	if strings.Contains(compareString, common.TOTAL_PATERN) {
+		variable := strings.ReplaceAll(compareString, common.TOTAL_PATERN, "")
+		return &GetHandlerResposne{
+			variable: variable,
+			handler:  string(common.TOTAL_HANDLER),
+		}
+	}
+
+	if strings.Contains(compareString, common.HAVE_MORE_PATERN) {
+		variable := strings.ReplaceAll(compareString, common.HAVE_MORE_PATERN, "")
+		return &GetHandlerResposne{
+			variable: variable,
+			handler:  string(common.HAVE_MORE_HANDLER),
+		}
+	}
+
+	if strings.Contains(compareString, common.HAVE) {
+		variable := strings.ReplaceAll(compareString, common.HAVE, "")
+		return &GetHandlerResposne{
+			variable: variable,
+			handler:  string(common.HAVE_HANDLER),
+		}
+	}
+
+	return nil
+}
+
+type ParseResult struct {
+	Operator        string
+	Parameter       string
+	Variable        string
+	FunctionHandler string
+}
+
+type OperatorType string
+
+const (
+	NUMERICS OperatorType = "numerics"
+	EQUALS   OperatorType = "equals"
+	CONTAINS OperatorType = "contains"
+)
+
+type GetHandlerResposne struct {
+	variable string
+	handler  string
 }

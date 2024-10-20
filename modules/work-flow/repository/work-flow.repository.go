@@ -13,6 +13,17 @@ type WorkFlowRepository struct {
 	table    string
 }
 
+func (r *WorkFlowRepository) GetById(id uint) (workflow.WorkFlow, error) {
+	var workFlowRes workflow.WorkFlow
+	result := r.database.Table(r.table).Where("id = ?", id).First(&workFlowRes)
+
+	if result.Error != nil {
+		return workFlowRes, result.Error
+	}
+
+	return workFlowRes, nil
+}
+
 func NewWorkFlowRepository(db *gorm.DB, table string) abstractrepo.WorkFlowRepository {
 	return &WorkFlowRepository{
 		database: db,

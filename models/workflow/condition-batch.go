@@ -10,9 +10,10 @@ import (
 type ConditionBatch struct {
 	ID              uint   `gorm:"primaryKey"` // Primary key
 	WorkFlowID      uint   // Foreign key referencing WorkFlow
-	Condition       string // Fixed typo from Condinmtion to Condition
+	Condition       string // condition1 AND condition2
 	SolvingFunction string
-	BindingAttr     string
+	BindingAttr     string // Json string
+	Action          string // Mesage for alert and condition to trigger message
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 }

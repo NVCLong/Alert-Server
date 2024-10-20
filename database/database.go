@@ -32,7 +32,7 @@ func ConnectDatabase() *gorm.DB {
 	db, err := gorm.Open(postgres.Open(psqlSetup), &gorm.Config{})
 	if err != nil {
 		log.Println("Error connecting to the database:", err)
-		return nil // Return nil if there is an error
+		return nil
 	}
 	db.Exec("DEALLOCATE ALL")
 	AutoMigrate(db)

@@ -21,3 +21,12 @@ type GetAllWorkFlowResponse struct {
 	LastUpdated  string
 	CreatedAt    string
 }
+
+type ImoportWorkFlowRequest struct {
+	ListCondition []WorkFlowConditionRequest
+}
+
+type WorkFlowConditionRequest struct {
+	Condition string
+	Action    string
+}

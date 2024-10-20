@@ -14,4 +14,5 @@ const (
 type WorkFlowRepository interface {
 	Create(c *gin.Context, workFlow *workflow.WorkFlow) error
 	GetAll(c *gin.Context) ([]dto.GetAllWorkFlowRawResponse, error)
+	GetById(id uint) (workflow.WorkFlow, error)
 }

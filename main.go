@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	boostrap "github.com/NVCLong/Alert-Server/bootstrap"
@@ -35,5 +36,10 @@ func main() {
 	timeout := time.Duration(30) * time.Second
 	router.Group("/api")
 	mainController.Setup(timeout, db, router, cacheService)
-	router.Run(":" + port)
+	err := router.Run(":" + port)
+	if err != nil {
+		return
+	}
+	var functionName string
+	fmt.Scanln(functionName)
 }

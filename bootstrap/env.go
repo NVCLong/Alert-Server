@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 )
 
@@ -16,21 +17,35 @@ const (
 	EnvDBUser
 	EnvDBPassword
 	EnvServerPort
+	EnvAllowPort
+	EnvRedisHost
+	EnvRedisAccessKey
+	EnvRedisTTL
+	EnvEmail
+	EnvPass
 )
 
 var envVarNames = map[EnvVar]string{
-	EnvDBHost:     "POSTGRES_HOST",
-	EnvDBPort:     "POSTGRES_PORT",
-	EnvDBName:     "POSTGRES_DB",
-	EnvDBUser:     "POSTGRES_USER_NAME",
-	EnvDBPassword: "POSTGRES_PASSWORD",
-	EnvServerPort: "PORT",
+	EnvDBHost:         "POSTGRES_HOST",
+	EnvDBPort:         "POSTGRES_PORT",
+	EnvDBName:         "POSTGRES_DB",
+	EnvDBUser:         "POSTGRES_USER_NAME",
+	EnvDBPassword:     "POSTGRES_PASSWORD",
+	EnvServerPort:     "PORT",
+	EnvAllowPort:      "ALLOW_PORT",
+	EnvRedisHost:      "REDIS_HOST",
+	EnvRedisAccessKey: "REDIS_ACCESS_KEY",
+	EnvRedisTTL:       "REDIS_TTL",
+	EnvEmail:          "EMAIL",
+	EnvPass:           "PASS",
 }
 
 func LoadEnvFile() {
-	err := godotenv.Load(".env")
-	if err != nil {
-		log.Fatalf("Error loading .env file: %v", err)
+	if gin.Mode() != gin.ReleaseMode {
+		err := godotenv.Load()
+		if err != nil {
+			log.Printf("Error loading .env file: %v", err)
+		}
 	}
 }
 

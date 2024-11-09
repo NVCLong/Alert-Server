@@ -9,9 +9,8 @@ import (
 
 func Migrate(db *gorm.DB, tables []Model) {
 	for _, table := range tables {
-		tableName := table.TableName() // Get the table name from the model
+		tableName := table.TableName()
 
-		// Check if the table exists using a raw SQL query
 		var exists bool
 		query := fmt.Sprintf(`SELECT EXISTS (
 				SELECT 1 FROM information_schema.tables 
@@ -32,7 +31,12 @@ func Migrate(db *gorm.DB, tables []Model) {
 				log.Printf("Table for model %T created successfully.", table)
 			}
 		} else {
-			log.Printf("Table for model %T already exists. Skipping...", table)
+			log.Printf("Table for model %T already exists. Attempting to update schema...", table)
+			if err := db.AutoMigrate(table); err != nil {
+				log.Printf("Error updating table for model %T: %v", table, err)
+			} else {
+				log.Printf("Table for model %T updated successfully.", table)
+			}
 		}
 	}
 }

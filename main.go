@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"time"
 
 	boostrap "github.com/NVCLong/Alert-Server/bootstrap"
 	"github.com/NVCLong/Alert-Server/database"
 	mainController "github.com/NVCLong/Alert-Server/modules"
+	"github.com/NVCLong/Alert-Server/redis"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 )
@@ -14,7 +16,9 @@ import (
 func main() {
 	router := gin.Default()
 	db := database.ConnectDatabase()
-
+	port := boostrap.GetEnv(boostrap.EnvServerPort)
+	redisClient := redis.NewRedisConnection()
+	cacheService := redis.NewCacheService(*redisClient, context.Background())
 	corsConfig := cors.Config{
 		AllowOrigins:     []string{"http://localhost:5173"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE"},
@@ -24,8 +28,18 @@ func main() {
 		MaxAge:           12 * time.Hour,
 	}
 	router.Use(cors.New(corsConfig))
+	router.GET("/", func(c *gin.Context) {
+		c.JSON(200, gin.H{
+			"message": "Welcome to the API!",
+		})
+	})
 	timeout := time.Duration(30) * time.Second
 	router.Group("/api")
-	mainController.Setup(timeout, db, router)
-	router.Run(fmt.Sprintf("localhost:%s", boostrap.GetEnv(boostrap.EnvServerPort)))
+	mainController.Setup(timeout, db, router, cacheService)
+	err := router.Run(":" + port)
+	if err != nil {
+		return
+	}
+	var functionName string
+	fmt.Scanln(functionName)
 }

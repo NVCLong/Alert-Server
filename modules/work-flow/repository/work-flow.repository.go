@@ -44,7 +44,7 @@ func (r *WorkFlowRepository) Create(c *gin.Context, workFlow *workflow.WorkFlow)
 func (r *WorkFlowRepository) GetAll(c *gin.Context) ([]dto.GetAllWorkFlowRawResponse, error) {
 	var workflows []dto.GetAllWorkFlowRawResponse
 
-	result := r.database.WithContext(c).Table("work_flows").Select("work_flows.*, users.name AS username").Joins("JOIN users ON users.id = work_flows.user_f_id").Find(&workflows)
+	result := r.database.WithContext(c).Table("work_flows").Select("work_flows.*, student_users.name AS username").Joins("JOIN student_users ON student_users.id = work_flows.user_f_id").Find(&workflows)
 	if result.Error != nil {
 		return nil, result.Error
 	}

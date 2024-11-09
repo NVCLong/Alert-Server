@@ -2,6 +2,7 @@ package redis
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -17,9 +18,9 @@ type CacheService struct {
 	ctx   context.Context
 }
 
-func NewCacheService(redis redis.Client, ctx context.Context) AbstractCacheService {
+func NewCacheService(redisClient redis.Client, ctx context.Context) AbstractCacheService {
 	return &CacheService{
-		redis: redis,
+		redis: redisClient,
 		ctx:   ctx,
 	}
 }
@@ -36,7 +37,7 @@ func (cacheService *CacheService) SetItem(key string, item interface{}, expire t
 func (cacheService *CacheService) GetItem(key string) (any, error) {
 	item, err := cacheService.redis.Get(cacheService.ctx, key).Result()
 	if err != nil {
-		if err == redis.Nil {
+		if errors.Is(err, redis.Nil) {
 			return "", nil
 		}
 		return "", err

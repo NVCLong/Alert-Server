@@ -21,6 +21,8 @@ const (
 	EnvRedisHost
 	EnvRedisAccessKey
 	EnvRedisTTL
+	EnvEmail
+	EnvPass
 )
 
 var envVarNames = map[EnvVar]string{
@@ -34,6 +36,8 @@ var envVarNames = map[EnvVar]string{
 	EnvRedisHost:      "REDIS_HOST",
 	EnvRedisAccessKey: "REDIS_ACCESS_KEY",
 	EnvRedisTTL:       "REDIS_TTL",
+	EnvEmail:          "EMAIL",
+	EnvPass:           "PASS",
 }
 
 func LoadEnvFile() {

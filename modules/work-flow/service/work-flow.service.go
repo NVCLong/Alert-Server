@@ -5,9 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	conditionbatch "github.com/NVCLong/Alert-Server/modules/condition-batch"
+	"github.com/NVCLong/Alert-Server/redis"
 	"gorm.io/gorm"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/NVCLong/Alert-Server/common"
 	abstractrepo "github.com/NVCLong/Alert-Server/database/abstract-repo"
@@ -18,8 +21,10 @@ import (
 
 type WorkFlowService struct {
 	repository            abstractrepo.WorkFlowRepository
+	userRepository        abstractrepo.UserAbstractRepository
 	conditionBatchService conditionbatch.AbstractService
 	logger                common.AbstractLogger
+	dataSource            *gorm.DB
 }
 
 type WorkFlowAbstractService interface {
@@ -27,15 +32,19 @@ type WorkFlowAbstractService interface {
 	CreateWorkFlow(c *gin.Context, wf dto.WorkFlowDTO)
 	ImportWorkFlow(c *gin.Context, workFlowId uint, listCondition []dto.WorkFlowConditionRequest) dto.SaveResponse
 	ParseCondition(conditionObj dto.WorkFlowConditionRequest, logger common.AbstractLogger, workFlowId uint) (dto.SaveResponse, error)
+	ExecuteWorkFlow(c *gin.Context, workFlowId uint, userIds []string)
 }
 
 func NewWorkFlowService(db *gorm.DB, repository abstractrepo.WorkFlowRepository) WorkFlowAbstractService {
 	logger := common.NewTracingLogger("WorkFlowService")
-	batchService := conditionbatch.NewBatchService(db, logger)
+	batchService := conditionbatch.NewBatchService(db)
+	userRepository := abstractrepo.NewUserRepository(db)
 	return &WorkFlowService{
 		repository:            repository,
 		logger:                logger,
 		conditionBatchService: batchService,
+		userRepository:        userRepository,
+		dataSource:            db,
 	}
 }
 
@@ -53,6 +62,32 @@ func (s *WorkFlowService) GetAllWorkFlows(c *gin.Context) {
 	s.logger.Debug("Mapping successfully")
 
 	c.JSON(http.StatusOK, gin.H{"result": getResult})
+}
+
+func (s *WorkFlowService) ExecuteWorkFlow(c *gin.Context, workFlowId uint, userIds []string) {
+	startDate := time.Now()
+	endDate := startDate.AddDate(0, 0, 7)
+	s.logger.Debug(fmt.Sprintf("Trigger create notification from %s to %s", startDate, endDate))
+	results := s.userRepository.FindUserHaveDeadline(startDate, endDate)
+	if len(results) == 0 {
+		s.logger.Debug("Do not have any user have deadline in next week")
+		c.JSON(http.StatusOK, gin.H{"response": "Do not have user have deadline in this week"})
+		return
+	}
+	redisClient := redis.NewRedisConnection()
+	defer redisClient.Close()
+
+	var wg sync.WaitGroup
+
+	// start worker pool
+	redis.StartWorkerPool(redisClient, &wg, c, len(results), s.dataSource)
+	for _, result := range results {
+		job := fmt.Sprintf(`{ "WorkflowID": "%d", "UserID": "%d", "Username": "%s", "UserEmail": "%s" }`, workFlowId, result.Id, result.Name, result.Email)
+		redis.PushJobToQueue(c, job, s.logger)
+	}
+	// Wait for all workers to finish
+	wg.Wait()
+	c.JSON(http.StatusOK, gin.H{"message": "Process success"})
 }
 
 func (s *WorkFlowService) CreateWorkFlow(c *gin.Context, wf dto.WorkFlowDTO) {
@@ -119,7 +154,7 @@ func mapToWorkFlowResponse(workFlows []dto.GetAllWorkFlowRawResponse) []dto.GetA
 func (s *WorkFlowService) ParseCondition(conditionObj dto.WorkFlowConditionRequest, logger common.AbstractLogger, workFlowId uint) (dto.SaveResponse, error) {
 	// Create a map to store results for each sub-condition\
 	condition := conditionObj.Condition
-	var resultsArray []*ParseResult
+	var resultsArray []*dto.ParseResult
 	var conditionString string
 	conditionKeywords := list.New()
 	isSingleCondition := getAndCheckConditionKeyword(condition, conditionKeywords, logger)
@@ -231,14 +266,14 @@ func getAndCheckConditionKeyword(condition string, conditionKeyWords *list.List,
 	return true
 }
 
-func parseSingleCondition(condition string, logger common.AbstractLogger) map[string]*ParseResult {
+func parseSingleCondition(condition string, logger common.AbstractLogger) map[string]*dto.ParseResult {
 	operatorMap := map[OperatorType][]string{
 		NUMERICS: common.NUMERIC_OPERATOR,
 		EQUALS:   common.EQUAL_OPERATOR,
 		CONTAINS: common.CONTAIN_OPERATOR,
 	}
 
-	resultMap := make(map[string]*ParseResult)
+	resultMap := make(map[string]*dto.ParseResult)
 
 	foundOperator := false
 	for operatorType, operators := range operatorMap {
@@ -263,7 +298,7 @@ func parseSingleCondition(condition string, logger common.AbstractLogger) map[st
 	return resultMap
 }
 
-func parseSubCondition(subConditions []string, conditionKeywords list.List, logger common.AbstractLogger) map[string]*ParseResult {
+func parseSubCondition(subConditions []string, conditionKeywords list.List, logger common.AbstractLogger) map[string]*dto.ParseResult {
 
 	operatorMap := map[OperatorType][]string{
 		NUMERICS: common.NUMERIC_OPERATOR,
@@ -271,7 +306,7 @@ func parseSubCondition(subConditions []string, conditionKeywords list.List, logg
 		CONTAINS: common.CONTAIN_OPERATOR,
 	}
 
-	resultMap := make(map[string]*ParseResult)
+	resultMap := make(map[string]*dto.ParseResult)
 
 	for _, subCondition := range subConditions {
 		foundOperator := false
@@ -299,7 +334,7 @@ func parseSubCondition(subConditions []string, conditionKeywords list.List, logg
 
 }
 
-func parseConditionToFunction(contextSring string, operator string, opType OperatorType, logger common.AbstractLogger) *ParseResult {
+func parseConditionToFunction(contextSring string, operator string, opType OperatorType, logger common.AbstractLogger) *dto.ParseResult {
 	logger.Debug("Start to parse condition to function context")
 	params := strings.Split(contextSring, operator)[1]
 	compareString := strings.Split(contextSring, operator)[0]
@@ -308,7 +343,7 @@ func parseConditionToFunction(contextSring string, operator string, opType Opera
 	functionHanlderName := getFunctionHandlerName(compareString, operator, params)
 	logger.Debug(fmt.Sprintf("variable: %s, Functionhanler: %s", functionHanlderName.variable, functionHanlderName.handler))
 
-	return &ParseResult{
+	return &dto.ParseResult{
 		Operator:        operator,
 		Parameter:       params,
 		Variable:        functionHanlderName.variable,
@@ -350,13 +385,6 @@ func getFunctionHandlerName(compareString string, opeator string, params string)
 	}
 
 	return nil
-}
-
-type ParseResult struct {
-	Operator        string
-	Parameter       string
-	Variable        string
-	FunctionHandler string
 }
 
 type OperatorType string

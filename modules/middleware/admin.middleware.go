@@ -63,9 +63,9 @@ func (middleware *AdminMiddleware) GetAdminHandlerFunc() gin.HandlerFunc {
 		query := fmt.Sprintf(`
 		    SELECT EXISTS (
 			SELECT 1 
-			FROM users 
-			JOIN user_setting_info usi on usi.user_id = users.id
-			WHERE users.id = %d 
+			FROM student_users 
+			JOIN user_setting_info usi on usi.user_id = student_users.id
+			WHERE student_users.id = %d 
 			AND usi.role = '%s'
 		);`, uid, common.ADMIN_ROLE)
 

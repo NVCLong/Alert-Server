@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/NVCLong/Alert-Server/common"
@@ -32,11 +33,28 @@ func NewWorkFlowController(timeout time.Duration, db *gorm.DB, group *gin.Router
 	workflowGroup.POST("/import/:id", func(ctx *gin.Context) {
 		importWorkFlow(ctx, workFlowService)
 	})
+	workflowGroup.GET("/excute/:id", func(ctx *gin.Context) {
+		executeWorkFlow(ctx, workFlowService, logger)
+	})
 }
 
 func getAllWorkFlows(c *gin.Context, workFlowService service.WorkFlowAbstractService, logger common.AbstractLogger) {
 	logger.Log("Recieve Request get all workflows ")
 	workFlowService.GetAllWorkFlows(c)
+}
+
+func executeWorkFlow(c *gin.Context, workFlowService service.WorkFlowAbstractService, logger common.AbstractLogger) {
+	logger.Log("Recieve Request execute work-flow")
+	workFlowId, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid workflow id", "details": err.Error()})
+		return
+	}
+
+	userIds := c.Query("userIds")
+	userIdList := strings.Split(userIds, ",")
+	workFlowService.ExecuteWorkFlow(c, uint(workFlowId), userIdList)
+
 }
 
 func createWorkFlow(c *gin.Context, workFlowService service.WorkFlowAbstractService) {

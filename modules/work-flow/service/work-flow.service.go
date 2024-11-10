@@ -33,11 +33,13 @@ type WorkFlowAbstractService interface {
 	ImportWorkFlow(c *gin.Context, workFlowId uint, listCondition []dto.WorkFlowConditionRequest) dto.SaveResponse
 	ParseCondition(conditionObj dto.WorkFlowConditionRequest, logger common.AbstractLogger, workFlowId uint) (dto.SaveResponse, error)
 	ExecuteWorkFlow(c *gin.Context, workFlowId uint, userIds []string)
+	DeleteWorkFlow(c *gin.Context, workflowId uint)
 }
 
-func NewWorkFlowService(db *gorm.DB, repository abstractrepo.WorkFlowRepository) WorkFlowAbstractService {
-	logger := common.NewTracingLogger("WorkFlowService")
-	batchService := conditionbatch.NewBatchService(db)
+func NewWorkFlowService(db *gorm.DB, repository abstractrepo.WorkFlowRepository, ctx *gin.Context) WorkFlowAbstractService {
+	tracingID := common.GetTracingIDFromContext(ctx)
+	logger := common.NewTracingLogger("WorkFlowController", tracingID)
+	batchService := conditionbatch.NewBatchService(db, ctx)
 	userRepository := abstractrepo.NewUserRepository(db)
 	return &WorkFlowService{
 		repository:            repository,
@@ -46,6 +48,23 @@ func NewWorkFlowService(db *gorm.DB, repository abstractrepo.WorkFlowRepository)
 		userRepository:        userRepository,
 		dataSource:            db,
 	}
+}
+
+func (s *WorkFlowService) DeleteWorkFlow(c *gin.Context, workflowId uint) {
+	s.logger.Debug("Starting to delete WorkFlow")
+	if err := s.dataSource.Delete(&workflow.WorkFlow{}, workflowId).Error; err != nil {
+		s.logger.Error(err.Error())
+		c.JSON(500, gin.H{
+			"error": "Failed to delete WorkFlow",
+		})
+		return
+	}
+	s.conditionBatchService.DeleteConditionByWorkFlowId(workflowId)
+	s.logger.Debug(fmt.Sprintf("Successfully deleted WorkFlow with ID: ", workflowId))
+	common.SetTraceIDHeader(c, s.logger.GetTraceId())
+	c.JSON(200, gin.H{
+		"message": "WorkFlow deleted successfully",
+	})
 }
 
 func (s *WorkFlowService) GetAllWorkFlows(c *gin.Context) {
@@ -60,7 +79,7 @@ func (s *WorkFlowService) GetAllWorkFlows(c *gin.Context) {
 	getResult := mapToWorkFlowResponse(result)
 
 	s.logger.Debug("Mapping successfully")
-
+	common.SetTraceIDHeader(c, s.logger.GetTraceId())
 	c.JSON(http.StatusOK, gin.H{"result": getResult})
 }
 
@@ -87,6 +106,7 @@ func (s *WorkFlowService) ExecuteWorkFlow(c *gin.Context, workFlowId uint, userI
 	}
 	// Wait for all workers to finish
 	wg.Wait()
+	common.SetTraceIDHeader(c, s.logger.GetTraceId())
 	c.JSON(http.StatusOK, gin.H{"message": "Process success"})
 }
 
@@ -105,6 +125,7 @@ func (s *WorkFlowService) ImportWorkFlow(c *gin.Context, workFlowId uint, listCo
 			WorkflowId: workFlowId,
 		}
 	}
+	s.conditionBatchService.DeleteConditionByWorkFlowId(workFlowId)
 	s.logger.Debug(fmt.Sprintf("Found Workflow with id : %d", workFlow.ID))
 	for _, condition := range listCondition {
 		result, error := s.ParseCondition(condition, s.logger, workFlowId)
@@ -117,7 +138,7 @@ func (s *WorkFlowService) ImportWorkFlow(c *gin.Context, workFlowId uint, listCo
 		}
 	}
 	s.logger.Debug(fmt.Sprintf("Import condition to workflow %d", workFlowId))
-
+	common.SetTraceIDHeader(c, s.logger.GetTraceId())
 	return dto.SaveResponse{
 		Message:    "Import success",
 		Status:     true,

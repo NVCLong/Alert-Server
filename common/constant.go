@@ -1,5 +1,10 @@
 package common
 
+import (
+	"fmt"
+	"github.com/gin-gonic/gin"
+)
+
 const (
 	ADMIN_ROLE = "user_admin"
 	USER_ROLE  = "user_member"
@@ -46,4 +51,22 @@ var DayOffsets = map[string]int{
 	"FRI":  5,
 	"SAT":  6,
 	"SUN":  0,
+}
+
+const TracingIDKey = "TracingID"
+
+func GetTracingIDFromContext(ctx *gin.Context) string {
+	tracingID, exists := ctx.Get(TracingIDKey)
+	if !exists {
+		return "UnknownTracingID"
+	}
+	return tracingID.(string)
+}
+
+func SetTraceIDHeader(ctx *gin.Context, traceID any) {
+	strID, ok := traceID.(string)
+	if !ok {
+		strID = fmt.Sprintf("%v", traceID)
+	}
+	ctx.Header("Trace-Id", strID)
 }

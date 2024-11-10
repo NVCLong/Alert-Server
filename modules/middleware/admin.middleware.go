@@ -12,6 +12,7 @@ import (
 	"github.com/NVCLong/Alert-Server/common"
 	redisService "github.com/NVCLong/Alert-Server/redis"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -85,6 +86,21 @@ func (middleware *AdminMiddleware) GetAdminHandlerFunc() gin.HandlerFunc {
 
 		handleSetItemToCache(middleware.cacheService, strconv.FormatUint(uid, 10), exists)
 		log.Println("User is an admin")
+		c.Next()
+	}
+}
+
+func TracingMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		tracingID := c.Request.Header.Get("X-Request-ID")
+		if tracingID == "" {
+			tracingID = uuid.New().String() // Generate a new UUID if X-Request-ID is not provided
+		}
+
+		c.Set(common.TracingIDKey, tracingID)
+
+		c.Writer.Header().Set("X-Request-ID", tracingID)
+
 		c.Next()
 	}
 }

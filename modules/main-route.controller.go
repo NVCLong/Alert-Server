@@ -18,6 +18,7 @@ func Setup(timeout time.Duration, db *gorm.DB, gin *gin.Engine, cacheService red
 
 	protectedRouter := gin.Group("/api")
 	//register route related to admin function
+	protectedRouter.Use(middleware.TracingMiddleware())
 	protectedRouter.Use(adminMiddleware.GetAdminHandlerFunc())
 
 	workflowController.NewWorkFlowController(timeout, db, protectedRouter)

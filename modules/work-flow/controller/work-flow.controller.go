@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/NVCLong/Alert-Server/common"
-	abstractrepo "github.com/NVCLong/Alert-Server/database/abstract-repo"
 	"github.com/NVCLong/Alert-Server/dto"
 	"github.com/NVCLong/Alert-Server/modules/work-flow/repository"
 	"github.com/NVCLong/Alert-Server/modules/work-flow/service"
@@ -17,30 +16,63 @@ import (
 )
 
 func NewWorkFlowController(timeout time.Duration, db *gorm.DB, group *gin.RouterGroup) {
+	// Define workflow route group
 	workflowGroup := group.Group("/work-flow")
 
-	workFlowRepository := repository.NewWorkFlowRepository(db, abstractrepo.WorkFlowTable)
-	logger := common.NewTracingLogger("WorkflowController")
+	// Initialize repository and services
+	workFlowRepository := repository.NewWorkFlowRepository(db, "WorkFlowTable")
 
-	workFlowService := service.NewWorkFlowService(db, workFlowRepository)
-
+	// Register route handlers
 	workflowGroup.GET("/all", func(ctx *gin.Context) {
+		tracingID := common.GetTracingIDFromContext(ctx)
+		logger := common.NewTracingLogger("WorkFlowController", tracingID)
+		workFlowService := service.NewWorkFlowService(db, workFlowRepository, ctx)
 		getAllWorkFlows(ctx, workFlowService, logger)
 	})
+
 	workflowGroup.POST("/create", func(ctx *gin.Context) {
-		createWorkFlow(ctx, workFlowService)
+		tracingID := common.GetTracingIDFromContext(ctx)
+		logger := common.NewTracingLogger("WorkFlowController", tracingID)
+		workFlowService := service.NewWorkFlowService(db, workFlowRepository, ctx)
+		createWorkFlow(ctx, workFlowService, logger)
 	})
+
 	workflowGroup.POST("/import/:id", func(ctx *gin.Context) {
-		importWorkFlow(ctx, workFlowService)
+		tracingID := common.GetTracingIDFromContext(ctx)
+		logger := common.NewTracingLogger("WorkFlowController", tracingID)
+		workFlowService := service.NewWorkFlowService(db, workFlowRepository, ctx)
+		importWorkFlow(ctx, workFlowService, logger)
 	})
-	workflowGroup.GET("/excute/:id", func(ctx *gin.Context) {
+
+	workflowGroup.GET("/execute/:id", func(ctx *gin.Context) {
+		tracingID := common.GetTracingIDFromContext(ctx)
+		logger := common.NewTracingLogger("WorkFlowController", tracingID)
+		workFlowService := service.NewWorkFlowService(db, workFlowRepository, ctx)
 		executeWorkFlow(ctx, workFlowService, logger)
+	})
+
+	workflowGroup.DELETE("/:id", func(ctx *gin.Context) {
+		tracingID := common.GetTracingIDFromContext(ctx)
+		logger := common.NewTracingLogger("WorkFlowController", tracingID)
+		workFlowService := service.NewWorkFlowService(db, workFlowRepository, ctx)
+		deleteWorkFlow(ctx, workFlowService, logger)
 	})
 }
 
 func getAllWorkFlows(c *gin.Context, workFlowService service.WorkFlowAbstractService, logger common.AbstractLogger) {
 	logger.Log("Recieve Request get all workflows ")
 	workFlowService.GetAllWorkFlows(c)
+}
+
+func deleteWorkFlow(c *gin.Context, workFlowService service.WorkFlowAbstractService, logger common.AbstractLogger) {
+	logger.Log("Delete work flow")
+	workFlowId, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid workflow id", "details": err.Error()})
+		return
+	}
+	workFlowService.DeleteWorkFlow(c, uint(workFlowId))
+
 }
 
 func executeWorkFlow(c *gin.Context, workFlowService service.WorkFlowAbstractService, logger common.AbstractLogger) {
@@ -57,7 +89,8 @@ func executeWorkFlow(c *gin.Context, workFlowService service.WorkFlowAbstractSer
 
 }
 
-func createWorkFlow(c *gin.Context, workFlowService service.WorkFlowAbstractService) {
+func createWorkFlow(c *gin.Context, workFlowService service.WorkFlowAbstractService, logger common.AbstractLogger) {
+	logger.Debug("Start to create workflow")
 	var newWorkFlow dto.WorkFlowDTO
 	if err := c.ShouldBindJSON(&newWorkFlow); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body", "details": err.Error()})
@@ -69,7 +102,8 @@ func createWorkFlow(c *gin.Context, workFlowService service.WorkFlowAbstractServ
 	workFlowService.CreateWorkFlow(c, newWorkFlow)
 }
 
-func importWorkFlow(c *gin.Context, workFlowService service.WorkFlowAbstractService) {
+func importWorkFlow(c *gin.Context, workFlowService service.WorkFlowAbstractService, logger common.AbstractLogger) {
+	logger.Debug("Start to import work flow")
 	var importRequest dto.ImoportWorkFlowRequest
 
 	workFlowId, err := strconv.ParseInt(c.Param("id"), 10, 64)

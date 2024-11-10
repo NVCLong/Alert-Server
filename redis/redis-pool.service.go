@@ -15,7 +15,7 @@ import (
 var conditionBatchService conditionbatch.AbstractService
 
 func StartWorkerPool(client *redis.Client, wg *sync.WaitGroup, ctx *gin.Context, numberWorkers int, db *gorm.DB) {
-	conditionBatchService = conditionbatch.NewBatchService(db)
+	conditionBatchService = conditionbatch.NewBatchService(db, ctx)
 	for w := 1; w <= numberWorkers; w++ {
 		wg.Add(1)
 		go ProcessJob(w, client, wg, ctx, conditionBatchService)

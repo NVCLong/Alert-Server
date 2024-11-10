@@ -8,6 +8,7 @@ import (
 	abstractrepo "github.com/NVCLong/Alert-Server/database/abstract-repo"
 	"github.com/NVCLong/Alert-Server/dto"
 	"github.com/NVCLong/Alert-Server/models/workflow"
+	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	"log"
 	"net/smtp"
@@ -20,6 +21,7 @@ type AbstractService interface {
 	SaveCondition(dto dto.ConditionBatchDTO) dto.SaveResponse
 	GetCondition(workflowID uint) dto.ConditionBatchDTO
 	TriggerCondition(jobCreation dto.JobCreation)
+	DeleteConditionByWorkFlowId(workflowId uint)
 }
 type ConditionBatchService struct {
 	db     *gorm.DB
@@ -141,6 +143,12 @@ func generateDeadlineNotification(notiReq dto.NotificationDeadlineRequest, varia
 	fmt.Println("Success Send Email")
 }
 
+func (s *ConditionBatchService) DeleteConditionByWorkFlowId(workflowId uint) {
+	if err := s.db.Delete(&workflow.ConditionBatch{}).Where("work_flow_f_id= ?", workflowId).Error; err != nil {
+		s.logger.Error("Fail to delete condition")
+	}
+}
+
 func includes(slice []string, item string) GetDayFromDate {
 	item = strings.TrimSpace(strings.ToUpper(item))
 	today := time.Now()
@@ -163,8 +171,9 @@ func includes(slice []string, item string) GetDayFromDate {
 		isInDate: false,
 	}
 }
-func NewBatchService(db *gorm.DB) AbstractService {
-	logger := common.NewTracingLogger("BatchService")
+func NewBatchService(db *gorm.DB, ctx *gin.Context) AbstractService {
+	tracingID := common.GetTracingIDFromContext(ctx)
+	logger := common.NewTracingLogger("BatchService", tracingID)
 	return &ConditionBatchService{
 		db:     db,
 		logger: logger,

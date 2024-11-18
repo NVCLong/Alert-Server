@@ -4,10 +4,13 @@ import (
 	"container/list"
 	"encoding/json"
 	"fmt"
+	env "github.com/NVCLong/Alert-Server/bootstrap"
 	conditionbatch "github.com/NVCLong/Alert-Server/modules/condition-batch"
 	"github.com/NVCLong/Alert-Server/redis"
 	"gorm.io/gorm"
+	"log"
 	"net/http"
+	"net/smtp"
 	"strings"
 	"sync"
 	"time"
@@ -27,6 +30,82 @@ type WorkFlowService struct {
 	dataSource            *gorm.DB
 }
 
+func (s *WorkFlowService) NotifySyncResult(c *gin.Context) {
+	s.logger.Debug("Start querying sync event")
+
+	var results []dto.SyncEventDTO
+
+	// Define the SQL query for retrieving sync events and joined user data
+	query := `SELECT 
+                s.sync_id, 
+                s.sync_event, 
+                s.sync_start_time, 
+                s.sync_finish_time, 
+                s.sync_status, 
+                s.sync_fail_reason, 
+                s.user_id, 
+                u.name AS username, 
+                u.email AS user_email, 
+                s.is_new
+            FROM 
+                sync_events s
+            JOIN 
+                student_users u ON s.user_id = u.id
+            WHERE s.is_new = true;`
+
+	if err := s.dataSource.Raw(query).Scan(&results).Error; err != nil {
+		s.logger.Error("Failed to query sync events")
+		c.JSON(500, gin.H{
+			"message": "Failed to query sync events",
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	var successResults []dto.SyncEventDTO
+	var failedResults []dto.SyncEventDTO
+
+	for _, result := range results {
+		if result.SyncStatus {
+			successResults = append(successResults, result)
+		} else {
+			failedResults = append(failedResults, result)
+		}
+	}
+
+	generateSyncNotification(results[0].UserEmail, results[0].Username, successResults, failedResults)
+
+}
+
+func generateSyncNotification(email string, name string, successResults []dto.SyncEventDTO, failedResults []dto.SyncEventDTO) {
+	from := env.GetEnv(env.EnvEmail)
+	pass := env.GetEnv(env.EnvPass)
+	to := email
+	fmt.Printf("From : %s To : %s\n", from, to)
+
+	var sendContent string
+
+	sendContent += "Send to " + name + "\n"
+	sendContent += fmt.Sprintf("Total have %d sync events \n", len(successResults)+len(failedResults))
+	sendContent += fmt.Sprintf("In this, %d events are success and %d events are fail \n", len(successResults), len(failedResults))
+	sendContent += fmt.Sprintf("There is a list of fail events with reason: \n")
+
+	for _, event := range failedResults {
+		sendContent += fmt.Sprintf("Sync event : %s at %s with fail reason %s \n", event.SyncEvent, strings.Split(event.SyncStartTime.String(), " ")[0], event.SyncFailReason)
+	}
+
+	sendContent += "Daily sync report for admin"
+	err := smtp.SendMail("smtp.gmail.com:587",
+		smtp.PlainAuth("", from, pass, "smtp.gmail.com"),
+		from, []string{to}, []byte(sendContent))
+
+	if err != nil {
+		log.Printf("smtp error: %s", err)
+		return
+	}
+	fmt.Println("Success Send Email")
+}
+
 type WorkFlowAbstractService interface {
 	GetAllWorkFlows(c *gin.Context)
 	CreateWorkFlow(c *gin.Context, wf dto.WorkFlowDTO)
@@ -34,6 +113,7 @@ type WorkFlowAbstractService interface {
 	ParseCondition(conditionObj dto.WorkFlowConditionRequest, logger common.AbstractLogger, workFlowId uint) (dto.SaveResponse, error)
 	ExecuteWorkFlow(c *gin.Context, workFlowId uint, userIds []string)
 	DeleteWorkFlow(c *gin.Context, workflowId uint)
+	NotifySyncResult(c *gin.Context)
 }
 
 func NewWorkFlowService(db *gorm.DB, repository abstractrepo.WorkFlowRepository, ctx *gin.Context) WorkFlowAbstractService {
@@ -227,7 +307,7 @@ func (s *WorkFlowService) ParseCondition(conditionObj dto.WorkFlowConditionReque
 		parsedResults := parseSingleCondition(condition, logger)
 		for _, result := range parsedResults {
 			resultsArray = append(resultsArray, result)
-			conditionString = "single-condition"
+			conditionString = result.FunctionHandler
 		}
 	}
 
@@ -245,11 +325,15 @@ func (s *WorkFlowService) ParseCondition(conditionObj dto.WorkFlowConditionReque
 		return response, err
 	}
 
-	actionData, e := json.Marshal(conditionObj.Condition)
-	if e != nil {
-		logger.Error(fmt.Sprintf("Failed to convert action to JSON: %s", e))
+	var action Action
+
+	// Parse the JSON string
+	correctedJSON := strings.ReplaceAll(conditionObj.Action, "'", "\"")
+	err = json.Unmarshal([]byte(correctedJSON), &action)
+	if err != nil {
+		fmt.Println("Error parsing JSON:", err)
 		response := dto.SaveResponse{
-			Message:    "Import Workflow fail as fail to convert action to JSON",
+			Message:    "Import Workflow fail as fail to convert results to JSON",
 			Status:     false,
 			WorkflowId: workFlowId,
 		}
@@ -258,8 +342,6 @@ func (s *WorkFlowService) ParseCondition(conditionObj dto.WorkFlowConditionReque
 
 	// binding attribute
 	jsonString := string(jsonData)
-	//action
-	actionString := string(actionData)
 
 	//condition
 
@@ -270,7 +352,8 @@ func (s *WorkFlowService) ParseCondition(conditionObj dto.WorkFlowConditionReque
 		WorkFlowID:  workFlowId,
 		Condition:   conditionString,
 		BindingAttr: jsonString,
-		Action:      actionString,
+		Action:      conditionObj.Action,
+		Type:        action.Type,
 	}
 	result := s.conditionBatchService.SaveCondition(saveConditionDto)
 	return result, nil
@@ -419,4 +502,9 @@ const (
 type GetHandlerResposne struct {
 	variable string
 	handler  string
+}
+
+type Action struct {
+	Message string
+	Type    string
 }

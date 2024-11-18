@@ -5,6 +5,7 @@ type ConditionBatchDTO struct {
 	Condition   string `json:"condition"`
 	BindingAttr string `json:"binding_attr"`
 	Action      string `json:"action"`
+	Type        string `json:"type"`
 }
 
 type SaveResponse struct {
@@ -40,4 +41,5 @@ type Deadline struct {
 type NotificationDeadlineRequest struct {
 	Results []Deadline
 	Action  string
+	Type    string
 }

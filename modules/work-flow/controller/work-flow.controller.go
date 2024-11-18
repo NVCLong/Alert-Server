@@ -20,7 +20,7 @@ func NewWorkFlowController(timeout time.Duration, db *gorm.DB, group *gin.Router
 	workflowGroup := group.Group("/work-flow")
 
 	// Initialize repository and services
-	workFlowRepository := repository.NewWorkFlowRepository(db, "WorkFlowTable")
+	workFlowRepository := repository.NewWorkFlowRepository(db, "work_flows")
 
 	// Register route handlers
 	workflowGroup.GET("/all", func(ctx *gin.Context) {
@@ -57,6 +57,18 @@ func NewWorkFlowController(timeout time.Duration, db *gorm.DB, group *gin.Router
 		workFlowService := service.NewWorkFlowService(db, workFlowRepository, ctx)
 		deleteWorkFlow(ctx, workFlowService, logger)
 	})
+
+	workflowGroup.GET("/notifySync", func(ctx *gin.Context) {
+		tracingID := common.GetTracingIDFromContext(ctx)
+		logger := common.NewTracingLogger("WorkFlowController", tracingID)
+		workFlowService := service.NewWorkFlowService(db, workFlowRepository, ctx)
+		notifySync(ctx, workFlowService, logger)
+	})
+}
+
+func notifySync(c *gin.Context, workFlowService service.WorkFlowAbstractService, logger common.AbstractLogger) {
+	logger.Log("Start check and notify Sync Result")
+	workFlowService.NotifySyncResult(c)
 }
 
 func getAllWorkFlows(c *gin.Context, workFlowService service.WorkFlowAbstractService, logger common.AbstractLogger) {

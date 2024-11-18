@@ -18,7 +18,7 @@ var (
 )
 
 const (
-	AT_LEAST_PATTERN = "AT LEAST ONE "
+	AT_LEAST_PATTERN = "AT_LEAST_ONE "
 	TOTAL_PATERN     = "TOTAL "
 	HAVE_MORE_PATERN = "HAVE MORE "
 	HAVE             = "HAVE"
@@ -34,9 +34,9 @@ const (
 )
 
 const (
-	ALERT_TYPE_WEEKLY   = "weekly"
-	ALERT_TYPE_SCHEDULE = "schedule"
-	ALERT_TYPE_DAILY    = "daily"
+	ALERT_TYPE_WEEKLY   = "WEEK"
+	ALERT_TYPE_SCHEDULE = "SCHEDULE"
+	ALERT_TYPE_DAILY    = "DAY"
 )
 
 var (
@@ -51,6 +51,12 @@ var DayOffsets = map[string]int{
 	"FRI":  5,
 	"SAT":  6,
 	"SUN":  0,
+}
+
+var TotalOffset = map[string]int{
+	"WEEK":  7,
+	"MONTH": 30,
+	"DAY":   0,
 }
 
 const TracingIDKey = "TracingID"

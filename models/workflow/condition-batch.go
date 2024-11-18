@@ -14,6 +14,7 @@ type ConditionBatch struct {
 	SolvingFunction string
 	BindingAttr     string // Json string
 	Action          string // Mesage for alert and condition to trigger message
+	Type            string
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 }

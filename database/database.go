@@ -2,6 +2,7 @@ package database
 
 import (
 	"fmt"
+	"gorm.io/gorm/logger"
 	"log"
 	"time"
 
@@ -30,7 +31,10 @@ func ConnectDatabase() *gorm.DB {
 	)
 
 	// Connect to the PostgreSQL database
-	db, err := gorm.Open(postgres.Open(psqlSetup), &gorm.Config{})
+	db, err := gorm.Open(postgres.Open(psqlSetup), &gorm.Config{
+		Logger:      logger.Default.LogMode(logger.Info),
+		PrepareStmt: true,
+	})
 	if err != nil {
 		log.Println("Error connecting to the database:", err)
 		return nil

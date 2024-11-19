@@ -3,6 +3,7 @@ package database
 import (
 	"fmt"
 	"log"
+	"time"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -24,7 +25,7 @@ func ConnectDatabase() *gorm.DB {
 
 	// Set up PostgreSQL connection string
 	psqlSetup := fmt.Sprintf(
-		"host=%s port=%s user=%s dbname=%s password=%s sslmode=disable",
+		"host=%s port=%s user=%s dbname=%s password=%s sslmode=disable prefer_simple_protocol=true",
 		host, port, userName, databaseName, password,
 	)
 
@@ -34,6 +35,17 @@ func ConnectDatabase() *gorm.DB {
 		log.Println("Error connecting to the database:", err)
 		return nil
 	}
+
+	sqlDB, err := db.DB()
+	if err != nil {
+		log.Println("Error getting database instance:", err)
+		return nil
+	}
+
+	sqlDB.SetMaxIdleConns(10)
+	sqlDB.SetMaxOpenConns(100)
+	sqlDB.SetConnMaxLifetime(time.Hour)
+
 	db.Exec("DEALLOCATE ALL")
 	AutoMigrate(db)
 	log.Println("Successfully connected to the database!")

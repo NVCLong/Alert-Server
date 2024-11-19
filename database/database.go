@@ -57,6 +57,10 @@ func ConnectDatabase() *gorm.DB {
 }
 
 func AutoMigrate(db *gorm.DB) {
+	Session := db.Session(&gorm.Session{PrepareStmt: true})
+	if Session != nil {
+		fmt.Println("Migration successful")
+	}
 	workflow.Migrate(db)
 }
 
